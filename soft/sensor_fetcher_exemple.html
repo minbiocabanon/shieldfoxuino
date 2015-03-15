@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+	<head>
+		<title>JQuery listener</title>
+	</head>
+	<body>
+		<h1>Sensor JQuery History</h1>
+		<form name="authentificationForm" id="authentificationForm" action="#">
+			<label for="sn">Sn :</label>
+			<input type="text" name="sn" id="sn" />
+
+			<label for="pass">Key :</label>
+			<input type="password" name="key" id="key" />
+
+			<input type="submit" value="Authentification" />
+		</form>
+
+		<div id="tokenDiv" style="display: none;">
+			Token : <input type="text" size="40" id="token" disabled />
+
+			<input type="button" id="messagesBt" value="Messages" />
+
+			<div id="messagesDiv" style="display: none;">
+				<table class="table" border="1"></table>
+			</div>
+
+		</div>
+
+		<script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js"></script>
+		<script>
+			$(document).ready(function() {
+				$("#authentificationForm").submit(function() {
+					$.ajax({
+						type: "GET",
+						url: "https://sensor.insgroup.fr/iot/devices/crc.json",
+						data: "sn="+$("#sn").val()+"&key="+$("#key").val(),
+						dataType: "text",
+						success: (
+							function(data) {
+								console.log('data : ' + data);
+								document.getElementById("token").value=data;
+								$("#tokenDiv").show();
+							}
+						),
+						error: (
+							function(data, textStatus, errorThrown) {
+								console.log('error : ' + data + ' & textStatus : ' + textStatus + ' & errorThrown : ' + errorThrown);
+								alert('Error');
+							}
+						)
+					});
+					return false;
+				});
+
+				$("#messagesBt").click(function(event) {
+					$.ajax({
+						type: "GET",
+						beforeSend: function (request) {
+							request.setRequestHeader("X-Snsr-Device-Key", document.getElementById("token").value);
+						},
+						url: "https://sensor.insgroup.fr/iot/devices/msgs/history.json",
+						data: "sn="+$("#sn").val(),
+						dataType: "json",
+						success: (
+							function(data) {
+								$("#messagesDiv").show();
+								$("table.table").empty();
+								$("table.table").append("<tr>" + "<th>When</th>" + "<th>Level</th>" + "<th>Type</th>" + "<th>Payload</th>" + "</tr>");
+								$.each(data, function(index, element) {
+									d = new Date(element.when);
+									$("table.table").append("<tr>" + "<td>"+d.toString()+"</td>" + "<td>"+element.lvl+"</td>" + "<td>"+element.type+"</td>" + "<td>"+element.payload+"</td>" + "</tr>" );
+								});
+							}
+						),
+						error: (
+							function(data, textStatus, errorThrown) {
+								console.log('error : ' + data + ' & textStatus : ' + textStatus + ' & errorThrown : ' + errorThrown);
+								alert('Error');
+							}
+						)
+					});
+					return false;
+				});
+			});
+		</script>
+	</body>
+</html>
