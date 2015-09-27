@@ -1,18 +1,20 @@
-/*
-	Arduino in transparent mode from hardware serial to software serial linked to TD1202
+//--------------------------------------------------
+//! \file		sketche_sigfoxuino.ino
+//! \brief		SIGFOX GPS TRACKER
+//! \brief		Use GPS for localisation.
+//! \brief		TD1202 SIGFOX module
 
-	Receives from the hardware serial, sends to software serial.
-	Receives from software serial, sends to hardware serial.
-
-	The circuit: 
-	* RX is digital pin 3 (connect to TX of TD1202)
-	* TX is digital pin 2 (connect to RX of TD1202)
-	
-	GPS with normal use of a TinyGPS++ (TinyGPSPlus) object.
-	It requires the use of SoftwareSerial, and assumes that you have a
-	4800-baud serial GPS device hooked up on pins 4(rx) and 5(tx).
- 
- */
+//! \brief		Receives from the hardware serial, sends to software serial.
+//! \brief		Receives from software serial, sends to hardware serial.
+//! \brief		The circuit:
+//! \brief		* RX is digital pin 3 (connect to TX of TD1202)
+//! \brief		* TX is digital pin 2 (connect to RX of TD1202)
+//! \brief		GPS with normal use of a TinyGPS++ (TinyGPSPlus) object.
+//! \brief		It requires the use of SoftwareSerial, and assumes that you have a
+//! \brief		4800-baud serial GPS device hooked up on pins 4(rx) and 5(tx).
+//! \date		2015-May
+//! \author		minbiocabanon
+//--------------------------------------------------
 
 #include <EEPROM.h>
 #include <Time.h>
@@ -22,16 +24,7 @@
 #include <SoftwareSerial.h>
 #include <Shieldfox.h>
 
-#define		TIMEOUT_GPS_FIX		5*60*1000	// 5 minutes = 300 000 msec	
-#define		PERIOD_CHECK_FIX	5*1000		// Period between position check -> 5 minutes = 300 000 msec		
-#define		INTERVAL_SIGFOX		10*60		// INTERVAL between two messages, in minutes 
-#define 	HDOP_FIX_OK			300			// HDOP without unit
-// State machine
-#define 	SM_NIL 				0			// No action SM
-#define 	SM_STANDBY 			1			// Standby SM
-#define 	SM_ACTIVE 			2			// Active SM
-#define 	SM_TRANSMIT 		3			// Transmit SM
-#define 	RADIUS_GEOFENCING	200			// radius in meter, outside this radius -> ALARM !
+#include "sketche_sigfoxuino.h"
 
 //flags
 boolean bFlagTimeoutgpsfix = false ;
@@ -45,9 +38,8 @@ unsigned int ledgreen = 16;                 // LED GPS connected to digital pin 
 unsigned int ledorange = 17;                // LED RF12 connected to digital pin 17
 static const int GPSRXPin = 4, GPSTXPin = 5;
 static const uint32_t GPSBaud = 9600;
-// static const double MY_LAT = 43.791358, MY_LON = 1.107715;
-static const double MY_LAT = 41.791358, MY_LON = 2.107715;
 int EventTimeOutGPSFix;
+unsigned long distanceKmToMyLoc;
 
 int addr_eeprom_msg24h = 00;				// EEPROM address where is stored nb of msg sent by 24h
 int addr_eeprom_msg = 01;					// EEPROM address where is stored total nb of message sent
@@ -57,24 +49,6 @@ const int offset = 0;   // UTC time -> don't use any zone, time zone will be com
 
 unsigned char Data_ascii[25];
 
-typedef struct trame {
-long         lattitude;
-long         longitude;
-unsigned char cap;
-unsigned char vitesse;
-char          temperature;
-unsigned char tension;
-} stTrame_byte;
-
-typedef struct trame_byte {
-float ln_lattitude;
-float ln_longitude;
-float f_cap;
-float f_vitesse;
-float f_temperature;
-float f_tension;
-} stTrame;
-
 stTrame Data;
 stTrame_byte Data_byte;
 	
@@ -83,94 +57,6 @@ Shieldfox_ shieldfox;						// The shieldfox object
 SoftwareSerial GpsSerial(GPSRXPin, GPSTXPin);	// The serial connection to the GPS device
 time_t prevDisplay = 0; 					// when the digital clock was displayed
 Timer t;
-
-
-//----------------------------------------------------------------------
-//!\Prototypes             
-//----------------------------------------------------------------------
-int ConvertTrame(stTrame *Data, stTrame_byte *Data_byte);
-void statemachine(void);
-void readGPS(void);
-int ConvertTrame(stTrame *Data, stTrame_byte *Data_byte);
-void hexDump (char *desc, void *addr, int len) ;
-void hexascii (stTrame_byte *Data_byte, void *addr);
-void update_datetime(void);
-void transmitmessage(void);
-void timeoutgpsfix();
-void greenledtask();
-
-//----------------------------------------------------------------------
-//!\brief         
-//!\param[in]     
-//!\return        
-//---------------------------------------------------------------------- 
-void setup(){
-	// Open serial communications and wait for port to open:
-	Serial.begin(115200);
-	
-	setTime(20,55,0,17,04,14); 					// set time to Saturday 8:29:00am Jan 1 2011
-	// Alarm.alarmRepeat(21,37,0,DailyAlarm);	// 5:45pm every day
-
-	GpsSerial.begin(GPSBaud);
-	// Initialize sigfox modem
-	shieldfox.begin();
-	pinMode(ledgreen, OUTPUT);      // sets the digital pin as output
-	pinMode(ledorange, OUTPUT);      // sets the digital pin as output
-	digitalWrite(ledgreen, HIGH);
-	digitalWrite(ledorange, LOW);
-	
-	Serial.println(F("Sats HDOP Latitude   Longitude   Fix  Date       Time     Date Alt    Course Speed Card   Distance "));
-	Serial.println(F("          (deg)      (deg)       Age                      Age  (m)    --- from GPS ----   to Myloc "));
-  
-	// at startup, launch timeout fix GPS 
-	EventTimeOutGPSFix =  t.after(TIMEOUT_GPS_FIX, timeoutgpsfix);
-	t.every(PERIOD_CHECK_FIX, greenledtask);
-	
-	sm_state = SM_STANDBY;
-  	Serial.println("Setup done.");	
-}
-
-//----------------------------------------------------------------------
-//!\brief         
-//!\param[in]     
-//!\return        
-//---------------------------------------------------------------------- 
-void loop(){
-	statemachine();
-	t.update();
-	Alarm.delay(0);
-	smartDelay(PERIOD_CHECK_FIX);
-
-
-}
-
-//----------------------------------------------------------------------
-//!\brief         
-//!\param[in]     
-//!\return        
-//---------------------------------------------------------------------- 
-void statemachine(void){
-	// en fonction de l'etat de la state machine on avise
-	switch(sm_state) {
-		// on est dans le neant
-		case SM_NIL:
-			// on ne fait rien
-			break;
-		case SM_STANDBY:
-			system_sleep();
-			// at startup, launch timeout fix GPS 
-			t.after(TIMEOUT_GPS_FIX, timeoutgpsfix);
-			//switch to ACTIVE mode
-			sm_state = SM_ACTIVE;
-			break;
-		case SM_ACTIVE:
-			readGPS();
-			break;
-		case SM_TRANSMIT:
-			transmitmessage();
-			break;			
-	}
-}
 
 //----------------------------------------------------------------------
 //!\brief         
@@ -193,15 +79,43 @@ void readGPS(void){
 	// end of debug 
 	
 	//compute distance in meter betweem GPS fix and MyLoc
-	unsigned long distanceKmToMyLoc =
+	distanceKmToMyLoc =
 		(unsigned long)TinyGPSPlus::distanceBetween(
 			gps.location.lat(),
 			gps.location.lng(),
 			MY_LAT, 
 			MY_LON);
-		printInt(distanceKmToMyLoc, gps.location.isValid(), 9);
+	printInt(distanceKmToMyLoc, gps.location.isValid(), 9);
 	Serial.println();
+}
 
+//----------------------------------------------------------------------
+//!\brief         Set clock with GPS time
+//!\param[in]     -
+//!\return        -
+//---------------------------------------------------------------------- 
+void SetClockWithGPS(void){
+	if( gps.location.isValid() && gps.location.age() < 500 ) {
+		//GPS fix is OK, we can update the clock !
+		if( bFlagFirstFix == true){
+			//update time
+			update_datetime();
+			bFlagFirstFix = false;
+			Alarm.alarmRepeat(12,00,00,DailyAlarm); // every day
+			//Alarm.timerRepeat(300, DailyAlarm);  	// !!! TEST !!!
+			//Alarm.timerRepeat(3600, HourAlarm);   // timer for every 1 hour 
+			// Send a message for the first GPS Fix 
+			bFlagDailyFix = true;			
+		}
+	}
+}
+
+//----------------------------------------------------------------------
+//!\brief         Check if GPS position is inside area
+//!\param[in]     -
+//!\return        -
+//---------------------------------------------------------------------- 
+void CheckGeofencing(void){
 	if( gps.location.isValid() && gps.hdop.value() <= HDOP_FIX_OK ) {
 		// stop timeout gpsfix
 		 t.stop(EventTimeOutGPSFix);
@@ -224,26 +138,30 @@ void readGPS(void){
 			// switch to STANDBY mode because everything is OK
 			sm_state = SM_STANDBY ;
 		}
-
-		//GPS fix is OK, we can update the clock !
-		if( bFlagDailyFix == true ){
-			// switch to TRANSMIT mode for sending a message
-			sm_state = SM_TRANSMIT ;
-		}
 	}
 	else{
 		//GPS is searching satellites
 		bFlagGPSfix = false;
 	}
-	
-	if( gps.location.isValid() && gps.location.age() < 500 ) {
-			//GPS fix is OK, we can update the clock !
-		if( bFlagFirstFix == true){
-			//update time
-			update_datetime();
-			bFlagFirstFix = false;
-			Alarm.alarmRepeat(16,13,00,DailyAlarm);  // 5:45pm every day
+}
+
+//----------------------------------------------------------------------
+//!\brief         Check if a daily fix occurs and then transmit a message
+//!\param[in]     -
+//!\return        -
+//---------------------------------------------------------------------- 
+void CheckDailyFix(void){
+	if( bFlagDailyFix == true ){	
+		if( gps.location.isValid() && gps.hdop.value() <= HDOP_FIX_OK ) {
+			// switch to TRANSMIT mode for sending a message
+			sm_state = SM_TRANSMIT ;
+			Serial.println("D: -> Daily Fix - GPS fix ok , go to SM_TRANSMIT");	
 		}
+		else{
+			Serial.println("D: -> Daily Fix - GPS NOK , DO nothing ???");			
+		}
+		// reset flag because GPS is not OK
+		bFlagDailyFix = false;
 	}
 }
 
@@ -373,25 +291,29 @@ void transmitmessage(void){
 	
 	Serial.print("D: Sending message over Sigfox");
 	//send buffer on sigfox network
-	shieldfox.send(&Data_byte, sizeof(Data_byte));
-	
-	// if sent successfull
-	// read eeprom counter values
-	Serial.print("D: Reading EEPROM values");
-	int valuemsg24h = EEPROM.read(addr_eeprom_msg24h);
-	int valuemsg = EEPROM.read(addr_eeprom_msg);
-	Serial.print("D: value : 24h = ");
-	Serial.print(valuemsg24h);
-	Serial.print(", total = ");
-	Serial.println(valuemsg);
-	// incremente counter values
-	EEPROM.write(addr_eeprom_msg24h, ++valuemsg24h);
-	EEPROM.write(addr_eeprom_msg, ++valuemsg);
-	Serial.print("D: incremented EEPROM value : 24h = ");
-	Serial.print(valuemsg24h, DEC); 
-	Serial.print(", total = ");
-	Serial.println(valuemsg, DEC);
-	
+	if(shieldfox.send(&Data_byte, sizeof(Data_byte)) == true){
+		// if sent successfull
+		// read eeprom counter values
+		Serial.println("Sigfox module OK (SFM msg)");
+		Serial.println("D: Reading EEPROM values");
+		int valuemsg24h = EEPROM.read(addr_eeprom_msg24h);
+		int valuemsg = EEPROM.read(addr_eeprom_msg);
+		Serial.print("D: value : 24h = ");
+		Serial.print(valuemsg24h);
+		Serial.print(", total = ");
+		Serial.println(valuemsg);
+		// incremente counter values
+		EEPROM.write(addr_eeprom_msg24h, ++valuemsg24h);
+		EEPROM.write(addr_eeprom_msg, ++valuemsg);
+		Serial.print("D: incremented EEPROM value : 24h = ");
+		Serial.print(valuemsg24h, DEC); 
+		Serial.print(", total = ");
+		Serial.println(valuemsg, DEC);
+	}
+	else{
+		Serial.println("Sigfox module return NOK (SFM msg)");
+	}
+		
 	// go back to STANDBY mode
 	sm_state = SM_STANDBY;
 	// reset daily flag to not send a position again
@@ -488,6 +410,24 @@ void DailyAlarm(void){
 	t.after(TIMEOUT_GPS_FIX, timeoutgpsfix);
 	sm_state = SM_ACTIVE;
 }
+
+//----------------------------------------------------------------------
+//!\brief         
+//!\param[in]     
+//!\return        
+//---------------------------------------------------------------------- 
+// functions to be called when an alarm triggers:
+void HourAlarm(void){
+	Serial.println("D: PROCEED TO HOUR FIX !!!!!!!!!!!");
+	bFlagDailyFix = true;
+	
+	// erase 24h msg counter stored in eeprom
+	EEPROM.write(addr_eeprom_msg24h, 00);
+	//launch timeout fix GPS 
+	t.after(TIMEOUT_GPS_FIX, timeoutgpsfix);
+	sm_state = SM_ACTIVE;
+}
+
 
 //----------------------------------------------------------------------
 //!\brief       set system into the sleep state   
@@ -617,4 +557,83 @@ void printDigits(int digits) {
 	if(digits < 10)
 		Serial.print('0');
 	Serial.print(digits);
+}
+
+//----------------------------------------------------------------------
+//!\brief         
+//!\param[in]     
+//!\return        
+//---------------------------------------------------------------------- 
+void statemachine(void){
+	// do action follow state machine status
+	switch(sm_state) {
+		case SM_NIL:
+			// Do nothing
+			break;
+		case SM_STANDBY:
+			system_sleep();
+			// at startup, launch timeout fix GPS 
+			t.after(TIMEOUT_GPS_FIX, timeoutgpsfix);
+			//switch to ACTIVE mode
+			sm_state = SM_ACTIVE;
+			break;
+		case SM_ACTIVE:
+			// get GPS position
+			readGPS();
+			// compare GPS position with autorized area
+			CheckGeofencing();
+			// check if a daily fix and message has to be sent
+			CheckDailyFix();
+			// set clock with GPS time
+			SetClockWithGPS();
+			break;
+		case SM_TRANSMIT:
+			// send a message
+			transmitmessage();
+			break;			
+	}
+}
+
+//----------------------------------------------------------------------
+//!\brief         
+//!\param[in]     
+//!\return        
+//---------------------------------------------------------------------- 
+void setup(){
+	// Open serial communications and wait for port to open:
+	Serial.begin(115200);
+	
+	setTime(18,20,0,10,8,15); 					// set time to Saturday 8:29:00am Jan 1 2011
+	// Alarm.alarmRepeat(21,37,0,DailyAlarm);	// 5:45pm every day
+
+	GpsSerial.begin(GPSBaud);
+	// Initialize sigfox modem
+	shieldfox.begin();
+	pinMode(ledgreen, OUTPUT);      // sets the digital pin as output
+	pinMode(ledorange, OUTPUT);      // sets the digital pin as output
+	digitalWrite(ledgreen, HIGH);
+	digitalWrite(ledorange, LOW);
+	
+	Serial.println(F("Sats HDOP Latitude   Longitude   Fix  Date       Time     Date Alt    Course Speed Card   Distance "));
+	Serial.println(F("          (deg)      (deg)       Age                      Age  (m)    --- from GPS ----   to Myloc "));
+  
+	// at startup, launch timeout fix GPS 
+	EventTimeOutGPSFix =  t.after(TIMEOUT_GPS_FIX, timeoutgpsfix);
+	t.every(PERIOD_CHECK_FIX, greenledtask);
+	
+	sm_state = SM_STANDBY;
+  	Serial.println("Setup done.");	
+}
+
+//----------------------------------------------------------------------
+//!\brief         
+//!\param[in]     
+//!\return        
+//---------------------------------------------------------------------- 
+void loop(){
+	statemachine();	
+	//for shedulers
+	t.update();
+	Alarm.delay(0);
+	smartDelay(PERIOD_CHECK_FIX);
 }
