@@ -21,7 +21,7 @@ Messages are stored in SIGFOX server that is accessible from any device connecte
 
 The shieldfoxuino tracker is composed with a shield plugged in the olimexino-328.
 
- * Use Sigfow network for communication,
+ * Use Sigfow network for communication (uplink only, bidirecionnal mode is NOT supported),
  * Use GPS for geolocalisation and geofencing,
  * Monitor LiPo cell voltage and can set an alarm on low power,
  * Monitor temperature,
@@ -44,6 +44,10 @@ Principles
 
 The device check if GPS position is inside an round area centered on an custom coordinates.
 When device is outside this area, a message alert is through Sigfox to your server. Server application can warn you by email or SMS.
+
+##Daily report
+Each day, shieldfoxuino send a message as a keepalive message.
+Message is the same as the geofencing message.
 
 ##Analog inputs
 
@@ -80,9 +84,22 @@ Don't forget to set your settings in this file :
 Compile files and uploard to olimexino-328 with arduino IDE (follow instructions in Developer's guide)
 
 
+
+
 Software
 ============
 Arduino IDE version must be 1.5.0 ! (newer version are not supported yet).
+
+Sigfox serial interface driver is forked from this hub :
+https://github.com/Ekito/hackerz_aker
+
+API IoT 
+============
+Once message is send to SIGFOX network, the only way to get this message is to run a request from a machine connected to the Internet (server, computer, mobile phone ...)
+You have to ask to your Sigfox provider the API side.
+
+  * backend SIGFOX : [[https://backend.sigfox.com]]
+  * backend Telecom Design : [[https://developers.insgroup.fr/]]
 
 
 Hardware
