@@ -13,7 +13,13 @@ More info about sigfox and Telecom Design modules :
 How it works ?
 ============
 
-The tracker is composed with a shield plugged in the olimexino-328.
+SIGFOX is an IoT network provider, it allows devices to send data with long range distance. Payload message is light (12 bytes), but it is very low power and subscription is cheap.
+Messages are stored in SIGFOX server that is accessible from any device connected to the Internet.
+
+![sigfox archi](/img/sigfox-schema.png) 
+(source http://www.ekito.fr/)
+
+The shieldfoxuino tracker is composed with a shield plugged in the olimexino-328.
 
  * Use Sigfow network for communication,
  * Use GPS for geolocalisation and geofencing,
