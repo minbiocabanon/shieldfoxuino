@@ -6,23 +6,22 @@ GPS tracker on an Olimexino-328 board + my Shield with TD1202 (SIGFOX) and GPS m
 More info about sigfox and Telecom Design modules : 
 
 - http://www.sigfox.com/
-- http://http://rfmodules.td-next.com
+- http://rfmodules.td-next.com/
 
 
 
 How it works ?
 ============
 
-The tracker is composed with a shield plugged in the olimexino-328. It allows DC/DC conversion (9-36V to 5V) and GPIO interfaces.
-
-![Shieldfoxuino architecture](/img/Synoptique_SHIELDFOX.jpg)
+The tracker is composed with a shield plugged in the olimexino-328.
 
  * Use Sigfow network for communication,
  * Use GPS for geolocalisation and geofencing,
  * Monitor LiPo cell voltage and can set an alarm on low power,
  * Monitor temperature,
  * Serial messages are for debug purpose only.
- 
+
+![Shieldfoxuino architecture](/img/Synoptique_SHIELDFOX.jpg) 
  
 Applications
 ============ 
@@ -59,10 +58,9 @@ Screenshots
 
 ![shieldfoxuino pic](img/shieldfoxuino.jpg)
 
-![Terminal pic](img/sigfoxuino_terminal)
+![Terminal pic](img/sigfoxuino_terminal.jpg)
 
-![Map pic](img/screenshot_map.jpg)
-
+![Map pic](img/screenshot_map.png)
 
  
 Instructions
@@ -84,9 +82,11 @@ Arduino IDE version must be 1.5.0 ! (newer version are not supported yet).
 Hardware
 ============
 - Olimexino-328
+
 https://www.olimex.com/Products/Duino/AVR/OLIMEXINO-328/open-source-hardware
 
 - plastic case
+
 http://www.seeedstudio.com/depot/General-Plastic-Case-25x60x100-mm-p-1001.html
 
 	
